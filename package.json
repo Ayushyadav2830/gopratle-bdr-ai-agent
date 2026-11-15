@@ -1,0 +1,26 @@
+{
+  "name": "gopratle-bdr-ai-agent",
+  "version": "1.0.0",
+  "description": "GoPratle BDR Lead Enrichment & Outreach Agent",
+  "main": "scripts/agent-runner.js",
+  "scripts": {
+    "test": "node scripts/run-tests.js",
+    "start": "node scripts/agent-runner.js",
+    "enrich": "node scripts/agent-runner.js --enrich",
+    "followup": "node scripts/agent-runner.js --followup"
+  },
+  "keywords": [
+    "bdr-agent",
+    "lead-enrichment",
+    "n8n",
+    "gemini-ai",
+    "tavily-search",
+    "google-sheets",
+    "gmail-outreach"
+  ],
+  "author": "GoPratle Candidate",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

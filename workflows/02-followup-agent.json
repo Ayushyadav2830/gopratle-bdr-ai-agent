@@ -1,0 +1,264 @@
+{
+  "name": "02 - GoPratle BDR Follow-up Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "e2a20002-0002-4000-8000-000000000001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "e2a20002-0002-4000-8000-000000000002",
+      "name": "Read Pending Follow-ups",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst now = new Date();\nconst dueRows = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const status = (row.Followup_Status || '').trim();\n  const dueDateStr = (row.Followup_Date || '').trim();\n\n  if (status === 'Pending' && dueDateStr) {\n    const dueDate = new Date(dueDateStr);\n    if (!isNaN(dueDate.getTime()) && dueDate <= now) {\n      dueRows.push({\n        json: row\n      });\n    }\n  }\n}\n\nreturn dueRows;"
+      },
+      "id": "e2a20002-0002-4000-8000-000000000003",
+      "name": "Filter Due Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.item.json;\nconst outreachStatus = (row.Outreach_Status || '').trim();\nconst replyStatus = (row.Reply_Status || '').trim();\n\n// 1. Initial outreach MUST have actually been sent (not just drafted)\nconst wasSent = ['Sent', 'Sent (Test)'].includes(outreachStatus);\n\n// 2. Suppress if lead already replied or opted out\nconst isSuppressed = ['Replied', 'Opted Out'].includes(replyStatus);\n\nif (!wasSent) {\n  return {\n    json: {\n      ...row,\n      action: 'skip',\n      reason: 'Initial outreach was drafted but not actually sent.'\n    }\n  };\n}\n\nif (isSuppressed) {\n  return {\n    json: {\n      ...row,\n      action: 'suppress',\n      Followup_Status: 'Suppressed',\n      reason: `Lead is suppressed due to Reply_Status: ${replyStatus}`,\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...row,\n    action: 'proceed'\n  }\n};"
+      },
+      "id": "e2a20002-0002-4000-8000-000000000004",
+      "name": "Check Reply/Opt-out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action }}",
+              "value2": "proceed"
+            }
+          ]
+        }
+      },
+      "id": "e2a20002-0002-4000-8000-000000000005",
+      "name": "Approval/Test Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columnToMatchOn": "row_number",
+        "valueToMatchOn": "={{ $json.row_number }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "Followup_Status",
+              "fieldValue": "Suppressed"
+            },
+            {
+              "fieldId": "Updated_At",
+              "fieldValue": "={{ $json.Updated_At }}"
+            }
+          ]
+        }
+      },
+      "id": "e2a20002-0002-4000-8000-000000000006",
+      "name": "Record Suppression in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1280,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "emailType": "draft",
+        "to": "={{ $env.TEST_MODE === 'true' ? ($env.TEST_RECIPIENT_EMAIL || 'test-lead@gopratle-testing.internal') : $json.Public_Email }}",
+        "subject": "=Follow-up: {{ $json.Email_Subject || 'GoPratle Event Coordination Support' }}",
+        "message": "=Hi {{ $json.Lead_Name !== 'Not Found' ? $json.Lead_Name : 'there' }},\n\nJust following up on my previous note about GoPratle. We would be glad to explore whether our network of event planners, DJs and crews could support your team's events.\n\nWould a brief conversation be useful?\n\nBest,\nGoPratle Team"
+      },
+      "id": "e2a20002-0002-4000-8000-000000000007",
+      "name": "Gmail Follow-up Draft/Test Send",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1280,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columnToMatchOn": "row_number",
+        "valueToMatchOn": "={{ $('Check Reply/Opt-out').item.json.row_number }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "Followup_Status",
+              "fieldValue": "Draft Created"
+            },
+            {
+              "fieldId": "Updated_At",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "e2a20002-0002-4000-8000-000000000008",
+      "name": "Update Follow-up Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1500,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Pending Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Pending Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Filter Due Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Due Rows": {
+      "main": [
+        [
+          {
+            "node": "Check Reply/Opt-out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Reply/Opt-out": {
+      "main": [
+        [
+          {
+            "node": "Approval/Test Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval/Test Gate": {
+      "main": [
+        [
+          {
+            "node": "Gmail Follow-up Draft/Test Send",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Suppression in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Follow-up Draft/Test Send": {
+      "main": [
+        [
+          {
+            "node": "Update Follow-up Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
