@@ -55,7 +55,7 @@
         "operation": "append",
         "documentId": {
           "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "value": "={{ $env.GOOGLE_SHEET_ID || '1c25W8At9zMzlqQ_fuJKsxlN56Iyjlm-Efi2VL1X86YU' }}",
           "mode": "id"
         },
         "sheetName": {
