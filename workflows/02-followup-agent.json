@@ -60,7 +60,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const row = $input.item.json;\nconst outreachStatus = (row.Outreach_Status || '').trim();\nconst replyStatus = (row.Reply_Status || '').trim();\n\n// 1. Initial outreach MUST have actually been sent (not just drafted)\nconst wasSent = ['Sent', 'Sent (Test)'].includes(outreachStatus);\n\n// 2. Suppress if lead already replied or opted out\nconst isSuppressed = ['Replied', 'Opted Out'].includes(replyStatus);\n\nif (!wasSent) {\n  return {\n    json: {\n      ...row,\n      action: 'skip',\n      reason: 'Initial outreach was drafted but not actually sent.'\n    }\n  };\n}\n\nif (isSuppressed) {\n  return {\n    json: {\n      ...row,\n      action: 'suppress',\n      Followup_Status: 'Suppressed',\n      reason: `Lead is suppressed due to Reply_Status: ${replyStatus}`,\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...row,\n    action: 'proceed'\n  }\n};"
+        "jsCode": "const row = $input.item.json;\nconst outreachStatus = (row.Outreach_Status || '').trim();\nconst replyStatus = (row.Reply_Status || '').trim();\nconst followupStatus = (row.Followup_Status || '').trim();\n\n// 1. Check if already drafted/completed to avoid duplicate follow-up drafts\nif (['Draft Created', 'Completed'].includes(followupStatus)) {\n  return {\n    json: {\n      ...row,\n      action: 'skip',\n      reason: `Follow-up already created: ${followupStatus}`\n    }\n  };\n}\n\n// 2. Check if lead is suppressed (Replied, Opted Out, Bounced)\nconst isSuppressed = ['Replied', 'Opted Out', 'Bounced', 'Suppressed'].includes(replyStatus) || followupStatus === 'Suppressed';\nif (isSuppressed) {\n  return {\n    json: {\n      ...row,\n      action: 'suppress',\n      Followup_Status: 'Suppressed',\n      reason: `Lead is suppressed due to Reply_Status: ${replyStatus || 'Suppressed'}`,\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\n// 3. Initial outreach MUST have actually been sent (not just drafted)\nconst wasSent = ['Sent', 'Sent (Test)'].includes(outreachStatus);\nif (!wasSent) {\n  return {\n    json: {\n      ...row,\n      action: 'skip',\n      reason: 'Initial outreach was only drafted, not actually sent. Skipping follow-up without suppressing.'\n    }\n  };\n}\n\n// 4. Eligible to proceed with follow-up draft\nreturn {\n  json: {\n    ...row,\n    action: 'proceed'\n  }\n};"
       },
       "id": "e2a20002-0002-4000-8000-000000000004",
       "name": "Check Reply/Opt-out",
@@ -83,12 +83,32 @@
         }
       },
       "id": "e2a20002-0002-4000-8000-000000000005",
-      "name": "Approval/Test Gate",
+      "name": "Is Action Proceed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
         1060,
         300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action }}",
+              "value2": "suppress"
+            }
+          ]
+        }
+      },
+      "id": "e2a20002-0002-4000-8000-000000000006",
+      "name": "Is Action Suppress?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        460
       ]
     },
     {
@@ -119,12 +139,12 @@
           ]
         }
       },
-      "id": "e2a20002-0002-4000-8000-000000000006",
+      "id": "e2a20002-0002-4000-8000-000000000007",
       "name": "Record Suppression in Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1280,
+        1500,
         460
       ]
     },
@@ -134,9 +154,9 @@
         "emailType": "draft",
         "to": "={{ $env.TEST_MODE === 'true' ? ($env.TEST_RECIPIENT_EMAIL || 'test-lead@gopratle-testing.internal') : $json.Public_Email }}",
         "subject": "=Follow-up: {{ $json.Email_Subject || 'GoPratle Event Coordination Support' }}",
-        "message": "=Hi {{ $json.Lead_Name !== 'Not Found' ? $json.Lead_Name : 'there' }},\n\nJust following up on my previous note about GoPratle. We would be glad to explore whether our network of event planners, DJs and crews could support your team's events.\n\nWould a brief conversation be useful?\n\nBest,\nGoPratle Team"
+        "message": "=Hi {{ $json.Lead_Name && $json.Lead_Name !== 'Not Found' ? $json.Lead_Name : 'there' }},\n\nJust following up on my previous note about GoPratle. We would be glad to explore whether our network of event planners, DJs and crews could support your team's events.\n\nWould a brief conversation be useful?\n\nBest,\nGoPratle Team"
       },
-      "id": "e2a20002-0002-4000-8000-000000000007",
+      "id": "e2a20002-0002-4000-8000-000000000008",
       "name": "Gmail Follow-up Draft/Test Send",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
@@ -173,7 +193,7 @@
           ]
         }
       },
-      "id": "e2a20002-0002-4000-8000-000000000008",
+      "id": "e2a20002-0002-4000-8000-000000000009",
       "name": "Update Follow-up Status",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
@@ -221,14 +241,14 @@
       "main": [
         [
           {
-            "node": "Approval/Test Gate",
+            "node": "Is Action Proceed?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Approval/Test Gate": {
+    "Is Action Proceed?": {
       "main": [
         [
           {
@@ -237,6 +257,17 @@
             "index": 0
           }
         ],
+        [
+          {
+            "node": "Is Action Suppress?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Action Suppress?": {
+      "main": [
         [
           {
             "node": "Record Suppression in Sheet",

@@ -28,20 +28,20 @@
       "type": "n8n-nodes-base.googleSheetsTrigger",
       "typeVersion": 1,
       "position": [
-        180,
+        120,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.item.json;\nconst company = (item.Company_Name || '').trim();\nconst city = (item.City || '').trim();\n\nif (!company || !city) {\n  return {\n    json: {\n      ...item,\n      isValid: false,\n      errorMessage: !company ? 'Company_Name is required' : 'City is required',\n      Research_Status: 'Failed',\n      Error_Details: !company ? 'Missing required field: Company_Name' : 'Missing required field: City',\n      Lead_Confidence: 'Low',\n      Outreach_Status: 'Not Ready',\n      Followup_Status: 'Not Scheduled',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...item,\n    Company_Name: company,\n    City: city,\n    isValid: true\n  }\n};"
+        "jsCode": "const item = $input.item.json;\nconst company = (item.Company_Name || '').toString().trim();\nconst city = (item.City || '').toString().trim();\n\nif (!company || !city) {\n  return {\n    json: {\n      ...item,\n      isValid: false,\n      errorMessage: !company ? 'Company_Name is required' : 'City is required',\n      Research_Status: 'Failed',\n      Error_Details: !company ? 'Missing required field: Company_Name' : 'Missing required field: City',\n      Lead_Confidence: 'Low',\n      Outreach_Status: 'Not Ready',\n      Followup_Status: 'Not Scheduled',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...item,\n    Company_Name: company,\n    City: city,\n    isValid: true\n  }\n};"
       },
       "id": "e1a10001-0001-4000-8000-000000000002",
       "name": "Validate Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        400,
+        320,
         300
       ]
     },
@@ -61,7 +61,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        620,
+        520,
         300
       ]
     },
@@ -102,21 +102,106 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        840,
+        720,
         480
       ]
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.item.json;\nconst existingStatus = (item.Research_Status || '').toLowerCase().trim();\n\n// Prevent duplicate processing if already completed or currently in flight\nif (['completed', 'processing'].includes(existingStatus)) {\n  return {\n    json: {\n      ...item,\n      isDuplicate: true,\n      Error_Details: `Duplicate skip: Lead already marked as ${item.Research_Status}`\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...item,\n    isDuplicate: false,\n    Research_Status: 'Processing'\n  }\n};"
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
       },
       "id": "e1a10001-0001-4000-8000-000000000005",
+      "name": "Read All Rows For DupCheck",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const currentLead = $('Validate Input').item.json;\nconst allRows = $input.all().map(i => i.json);\n\nfunction norm(s) {\n  return (s || '').toString().toLowerCase().replace(/[^\\w\\s]/g, ' ').replace(/\\s+/g, ' ').trim();\n}\n\nconst targetComp = norm(currentLead.Company_Name);\nconst targetCity = norm(currentLead.City);\nconst currentRowNum = currentLead.row_number;\n\nconst match = allRows.find(r => {\n  if (currentRowNum && r.row_number === currentRowNum) return false;\n  const compMatch = norm(r.Company_Name) === targetComp;\n  const cityMatch = norm(r.City) === targetCity;\n  if (!compMatch || !cityMatch) return false;\n\n  const status = (r.Research_Status || '').toLowerCase().trim();\n  const outreach = (r.Outreach_Status || '').toLowerCase().trim();\n  return ['completed', 'processing', 'needs review', 'duplicate'].includes(status) ||\n         ['draft created', 'sent (test)', 'sent'].includes(outreach);\n});\n\nif (match) {\n  return {\n    json: {\n      ...currentLead,\n      isDuplicate: true,\n      duplicateReason: `Duplicate: '${currentLead.Company_Name}' in '${currentLead.City}' already exists in database.`\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...currentLead,\n    isDuplicate: false,\n    Research_Status: 'Processing'\n  }\n};"
+      },
+      "id": "e1a10001-0001-4000-8000-000000000006",
       "name": "Duplicate Check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        840,
-        180
+        940,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isDuplicate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "e1a10001-0001-4000-8000-000000000007",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID || 'GoPratle_BDR_Lead_Database' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columnToMatchOn": "row_number",
+        "valueToMatchOn": "={{ $json.row_number }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "Research_Status",
+              "fieldValue": "Duplicate"
+            },
+            {
+              "fieldId": "Error_Details",
+              "fieldValue": "={{ $json.duplicateReason }}"
+            },
+            {
+              "fieldId": "Updated_At",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "e1a10001-0001-4000-8000-000000000008",
+      "name": "Record Duplicate in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1360,
+        80
       ]
     },
     {
@@ -136,13 +221,13 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"query\": \"{{ $json.Company_Name }} {{ $json.City }} events activations partnerships business\",\n  \"search_depth\": \"advanced\",\n  \"max_results\": 5\n}"
       },
-      "id": "e1a10001-0001-4000-8000-000000000006",
+      "id": "e1a10001-0001-4000-8000-000000000009",
       "name": "Search Company",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1060,
-        180
+        1360,
+        320
       ]
     },
     {
@@ -162,13 +247,13 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"query\": \"{{ $('Duplicate Check').item.json.Company_Name }} {{ $('Duplicate Check').item.json.City }} Events Manager OR Head of Events OR Partnerships Manager OR HR Head OR Founder\",\n  \"search_depth\": \"advanced\",\n  \"max_results\": 5\n}"
       },
-      "id": "e1a10001-0001-4000-8000-000000000007",
+      "id": "e1a10001-0001-4000-8000-000000000010",
       "name": "Search Decision Makers",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1280,
-        180
+        1580,
+        320
       ]
     },
     {
@@ -188,26 +273,26 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"query\": \"{{ $('Duplicate Check').item.json.Company_Name }} {{ $('Duplicate Check').item.json.City }} official contact email OR business contact\",\n  \"search_depth\": \"advanced\",\n  \"max_results\": 5\n}"
       },
-      "id": "e1a10001-0001-4000-8000-000000000008",
+      "id": "e1a10001-0001-4000-8000-000000000011",
       "name": "Search Public Contact",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1500,
-        180
+        1800,
+        320
       ]
     },
     {
       "parameters": {
-        "jsCode": "const original = $('Duplicate Check').item.json;\nconst companyResults = $('Search Company').item.json.results || [];\nconst dmResults = $('Search Decision Makers').item.json.results || [];\nconst contactResults = $('Search Public Contact').item.json.results || [];\n\nconst ROLE_PRIORITIES = [\n  { priority: 1, category: 'Events', regex: /\\b(head of events?|events? manager|events? lead|event operations?)\\b/i },\n  { priority: 2, category: 'Partnerships', regex: /\\b(partnerships? manager|brand partnerships?|marketing partnerships?)\\b/i },\n  { priority: 3, category: 'HR', regex: /\\b(head of hr|hr lead|talent acquisition|people operations?)\\b/i },\n  { priority: 4, category: 'Founder', regex: /\\b(founder|co-founder|ceo|managing director)\\b/i }\n];\n\nlet bestCandidate = null;\nlet highestScore = -1;\n\nfor (const r of dmResults) {\n  let rank = 99;\n  let category = 'Other';\n  for (const rule of ROLE_PRIORITIES) {\n    if (rule.regex.test(r.title || '') || rule.regex.test(r.content || '')) {\n      rank = rule.priority;\n      category = rule.category;\n      break;\n    }\n  }\n  const score = 100 - (rank * 10);\n  if (score > highestScore) {\n    highestScore = score;\n    const titleParts = (r.title || '').split(/[-–|]/).map(s => s.trim());\n    bestCandidate = {\n      name: titleParts[0] || 'Not Found',\n      title: titleParts[1] || r.snippet || 'Not Found',\n      category,\n      sourceUrl: r.url,\n      score\n    };\n  }\n}\n\n// Extract public email\nconst emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/g;\nlet foundEmail = 'Not Found';\nlet emailSource = '';\nfor (const res of [...contactResults, ...companyResults, ...dmResults]) {\n  const text = `${res.title || ''} ${res.content || ''}`;\n  const m = text.match(emailRegex);\n  if (m && !m[0].includes('example') && !m[0].includes('noreply')) {\n    foundEmail = m[0].toLowerCase();\n    emailSource = res.url;\n    break;\n  }\n}\n\n// Evidence-based confidence scoring\nlet confidence = 'Low';\nif (bestCandidate && bestCandidate.score >= 80 && (foundEmail !== 'Not Found' || bestCandidate.sourceUrl)) {\n  confidence = foundEmail !== 'Not Found' ? 'High' : 'Medium';\n} else if (bestCandidate) {\n  confidence = 'Medium';\n}\n\nreturn {\n  json: {\n    ...original,\n    Lead_Name: bestCandidate ? bestCandidate.name : 'Not Found',\n    Job_Title: bestCandidate ? bestCandidate.title : 'Not Found',\n    Target_Role: bestCandidate ? bestCandidate.category : 'Other',\n    Public_Email: foundEmail,\n    Contact_Source: bestCandidate ? bestCandidate.sourceUrl : emailSource,\n    Company_Context: companyResults[0]?.content || `${original.Company_Name} operations in ${original.City}`,\n    Lead_Confidence: confidence,\n    candidate_found: !!bestCandidate\n  }\n};"
+        "jsCode": "const original = $('Duplicate Check').item.json;\nconst companyResults = $('Search Company').item.json.results || [];\nconst dmResults = $('Search Decision Makers').item.json.results || [];\nconst contactResults = $('Search Public Contact').item.json.results || [];\n\nconst ROLE_PRIORITIES = [\n  { priority: 1, category: 'Events', regex: /\\b(head of events?|events? manager|events? lead|event operations?|experiential marketing)\\b/i },\n  { priority: 2, category: 'Partnerships', regex: /\\b(partnerships? manager|brand partnerships?|marketing partnerships?|alliances? manager)\\b/i },\n  { priority: 3, category: 'HR', regex: /\\b(head of hr|hr lead|talent acquisition|people operations?|head of people)\\b/i },\n  { priority: 4, category: 'Founder', regex: /\\b(founder|co-founder|ceo|chief executive officer|managing director)\\b/i }\n];\n\nlet bestCandidate = null;\nlet highestScore = -1;\n\nfor (const r of dmResults) {\n  let rank = 99;\n  let category = 'Other';\n  for (const rule of ROLE_PRIORITIES) {\n    if (rule.regex.test(r.title || '') || rule.regex.test(r.content || '')) {\n      rank = rule.priority;\n      category = rule.category;\n      break;\n    }\n  }\n  if (rank === 99) continue;\n  const score = 100 - (rank * 10);\n  if (score > highestScore) {\n    highestScore = score;\n    const titleParts = (r.title || '').split(/[-–|]/).map(s => s.trim());\n    bestCandidate = {\n      name: titleParts[0] || 'Not Found',\n      title: titleParts[1] || r.snippet || 'Not Found',\n      category,\n      sourceUrl: r.url,\n      score\n    };\n  }\n}\n\n// Extract public business email (no syntax guessing)\nconst emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/g;\nlet foundEmail = 'Not Found';\nlet emailSource = '';\nfor (const res of [...contactResults, ...companyResults, ...dmResults]) {\n  const text = `${res.title || ''} ${res.content || ''}`;\n  const m = text.match(emailRegex);\n  if (m && !m[0].includes('example') && !m[0].includes('noreply')) {\n    foundEmail = m[0].toLowerCase();\n    emailSource = res.url;\n    break;\n  }\n}\n\n// Evidence-based confidence scoring\nlet confidence = 'Low';\nif (bestCandidate && bestCandidate.score >= 80 && (foundEmail !== 'Not Found' || bestCandidate.sourceUrl)) {\n  confidence = foundEmail !== 'Not Found' ? 'High' : 'Medium';\n} else if (bestCandidate) {\n  confidence = 'Medium';\n}\n\nreturn {\n  json: {\n    ...original,\n    Lead_Name: bestCandidate ? bestCandidate.name : 'Not Found',\n    Job_Title: bestCandidate ? bestCandidate.title : 'Not Found',\n    Target_Role: bestCandidate ? bestCandidate.category : 'Other',\n    Public_Email: foundEmail,\n    Contact_Source: bestCandidate ? bestCandidate.sourceUrl : emailSource,\n    Company_Context: companyResults[0]?.content || `${original.Company_Name} operations in ${original.City}`,\n    Lead_Confidence: confidence,\n    candidate_found: !!bestCandidate\n  }\n};"
       },
-      "id": "e1a10001-0001-4000-8000-000000000009",
+      "id": "e1a10001-0001-4000-8000-000000000012",
       "name": "Parse & Rank Lead",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1720,
-        180
+        2020,
+        320
       ]
     },
     {
@@ -227,26 +312,26 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": \"You are an expert B2B Business Development Research and Outreach Assistant working for GoPratle.\\nGoPratle connects event hosts with vetted event planners, DJs, and professional event crews.\\n\\nRules:\\n1. Generate an email subject and exactly THREE concise lines.\\n2. Line 1: Hi [Name], I came across your work around [context] in [City].\\n3. Line 2: GoPratle connects event hosts with vetted planners, DJs and professional crews to make event coordination easier.\\n4. Line 3: Would you be open to a short conversation about whether this could support your team's event requirements?\\n5. Return raw JSON matching schema strictly.\\n\\nInput Data:\\nCompany: {{ $json.Company_Name }}\\nCity: {{ $json.City }}\\nLead Name: {{ $json.Lead_Name }}\\nJob Title: {{ $json.Job_Title }}\\nContext: {{ $json.Company_Context }}\\nConfidence: {{ $json.Lead_Confidence }}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"responseMimeType\": \"application/json\"\n  }\n}"
       },
-      "id": "e1a10001-0001-4000-8000-000000000010",
+      "id": "e1a10001-0001-4000-8000-000000000013",
       "name": "Gemini Personalised Pitch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1940,
-        180
+        2240,
+        320
       ]
     },
     {
       "parameters": {
-        "jsCode": "const prev = $('Parse & Rank Lead').item.json;\nconst aiRaw = $input.item.json;\nlet parsed = null;\n\ntry {\n  const text = aiRaw.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n  parsed = JSON.parse(text);\n} catch (e) {\n  return {\n    json: {\n      ...prev,\n      AI_Pitch: 'Parsing failed: Invalid JSON returned by AI',\n      Email_Subject: `Event Coordination Support for ${prev.Company_Name}`,\n      Research_Status: 'Needs Review',\n      Error_Details: 'AI JSON parsing error. Requires human review.',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nconst l1 = (parsed.pitch_line_1 || '').trim();\nconst l2 = (parsed.pitch_line_2 || '').trim();\nconst l3 = (parsed.pitch_line_3 || '').trim();\n\nif (!l1 || !l2 || !l3) {\n  return {\n    json: {\n      ...prev,\n      AI_Pitch: 'Validation failed: Pitch did not contain exactly three lines',\n      Email_Subject: parsed.email_subject || `Event Vendor Network for ${prev.Company_Name}`,\n      Research_Status: 'Needs Review',\n      Error_Details: 'Pitch validation failed (fewer than 3 lines).',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nconst pitchText = `${l1}\\n${l2}\\n${l3}`;\n\nreturn {\n  json: {\n    ...prev,\n    AI_Pitch: pitchText,\n    Email_Subject: parsed.email_subject || `Event Coordination for ${prev.Company_Name}`,\n    Research_Status: prev.Lead_Confidence === 'Low' ? 'Needs Review' : 'Completed',\n    Updated_At: new Date().toISOString()\n  }\n};"
+        "jsCode": "const prev = $('Parse & Rank Lead').item.json;\nconst aiRaw = $input.item.json;\nlet parsed = null;\n\ntry {\n  const text = aiRaw.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n  parsed = JSON.parse(text);\n} catch (e) {\n  return {\n    json: {\n      ...prev,\n      AI_Pitch: 'Parsing failed: Invalid JSON returned by AI',\n      Email_Subject: `Event Coordination Support for ${prev.Company_Name}`,\n      Research_Status: 'Needs Review',\n      Error_Details: 'AI JSON parsing error. Requires human review.',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nconst l1 = (parsed.pitch_line_1 || '').trim();\nconst l2 = (parsed.pitch_line_2 || '').trim();\nconst l3 = (parsed.pitch_line_3 || '').trim();\n\nif (!l1 || !l2 || !l3) {\n  return {\n    json: {\n      ...prev,\n      AI_Pitch: 'Validation failed: Pitch did not contain exactly three lines',\n      Email_Subject: parsed.email_subject || `Event Vendor Network for ${prev.Company_Name}`,\n      Research_Status: 'Needs Review',\n      Error_Details: 'Pitch validation failed (fewer than 3 lines).',\n      Updated_At: new Date().toISOString()\n    }\n  };\n}\n\nconst pitchText = `${l1}\\n${l2}\\n${l3}`;\n\nreturn {\n  json: {\n    ...prev,\n    AI_Pitch: pitchText,\n    Email_Subject: parsed.email_subject || `Event Coordination for ${prev.Company_Name}`,\n    Research_Status: prev.Lead_Confidence === 'Low' || prev.Lead_Name === 'Not Found' ? 'Needs Review' : 'Completed',\n    Updated_At: new Date().toISOString()\n  }\n};"
       },
-      "id": "e1a10001-0001-4000-8000-000000000011",
+      "id": "e1a10001-0001-4000-8000-000000000014",
       "name": "Validate AI JSON",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2160,
-        180
+        2460,
+        320
       ]
     },
     {
@@ -313,13 +398,13 @@
           ]
         }
       },
-      "id": "e1a10001-0001-4000-8000-000000000012",
+      "id": "e1a10001-0001-4000-8000-000000000015",
       "name": "Update Original Sheet Row",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        2380,
-        180
+        2680,
+        320
       ]
     },
     {
@@ -337,13 +422,13 @@
           ]
         }
       },
-      "id": "e1a10001-0001-4000-8000-000000000013",
+      "id": "e1a10001-0001-4000-8000-000000000016",
       "name": "Approval Gate",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        2600,
-        180
+        2900,
+        320
       ]
     },
     {
@@ -354,13 +439,13 @@
         "subject": "={{ ($env.TEST_MODE === 'true' ? '[DEMO TEST] ' : '') + $json.Email_Subject }}",
         "message": "=Hi {{ $json.Lead_Name !== 'Not Found' ? $json.Lead_Name : 'there' }},\n\n{{ $json.AI_Pitch }}\n\nBest,\nGoPratle Team"
       },
-      "id": "e1a10001-0001-4000-8000-000000000014",
+      "id": "e1a10001-0001-4000-8000-000000000017",
       "name": "Gmail Draft/Test Send",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        2820,
-        100
+        3120,
+        220
       ]
     },
     {
@@ -390,11 +475,11 @@
             },
             {
               "fieldId": "Followup_Date",
-              "fieldValue": "={{ $now.plus({ days: 2 }).toISO() }}"
+              "fieldValue": ""
             },
             {
               "fieldId": "Followup_Status",
-              "fieldValue": "Pending"
+              "fieldValue": "Not Scheduled"
             },
             {
               "fieldId": "Updated_At",
@@ -403,13 +488,13 @@
           ]
         }
       },
-      "id": "e1a10001-0001-4000-8000-000000000015",
+      "id": "e1a10001-0001-4000-8000-000000000018",
       "name": "Update Outreach Status",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        3040,
-        100
+        3340,
+        220
       ]
     }
   ],
@@ -440,7 +525,7 @@
       "main": [
         [
           {
-            "node": "Duplicate Check",
+            "node": "Read All Rows For DupCheck",
             "type": "main",
             "index": 0
           }
@@ -454,8 +539,37 @@
         ]
       ]
     },
+    "Read All Rows For DupCheck": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Duplicate Check": {
       "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Record Duplicate in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Search Company",

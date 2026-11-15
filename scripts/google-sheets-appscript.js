@@ -60,3 +60,4 @@ function sendToN8n(data, rowNumber) {
     Logger.log("Failed to send lead to n8n webhook: " + err.message);
   }
 }
+

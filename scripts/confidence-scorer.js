@@ -7,7 +7,7 @@
  * - Low: Weak match, ambiguous role, stale result, or insufficient evidence.
  */
 
-function calculateConfidenceScore(leadData) {
+function calculateConfidenceScore(leadData = {}) {
   const reasons = [];
   let score = 'Low';
 
@@ -16,12 +16,18 @@ function calculateConfidenceScore(leadData) {
   const hasSource = Boolean(leadData.contact_source || leadData.source_url);
   const hasEmail = leadData.public_email && leadData.public_email !== 'Not Found';
   const hasLinkedIn = Boolean(leadData.linkedin_url);
-  const isCityRelevant = Boolean(leadData.city_verified || leadData.location_score > 0);
+  const isCityRelevant = Boolean(leadData.city_verified || (leadData.location_score && leadData.location_score > 0));
   const isTargetRole = ['Events', 'Partnerships', 'HR', 'Founder'].includes(leadData.target_role);
+  const isFormer = Boolean(leadData.isFormer);
 
-  if (!hasName || !hasTitle || !hasSource) {
+  // Stale profile or missing core facts must immediately result in Low confidence
+  if (!hasName || !hasTitle || !hasSource || isFormer) {
     score = 'Low';
-    reasons.push('Insufficient evidence: missing person name, title, or supporting source URL');
+    if (isFormer) {
+      reasons.push('Candidate appears to be a former employee or stale profile');
+    } else {
+      reasons.push('Insufficient evidence: missing person name, title, or supporting source URL');
+    }
     return {
       confidence: score,
       reason: reasons.join('; '),
@@ -34,13 +40,13 @@ function calculateConfidenceScore(leadData) {
   if (isTargetRole && isCityRelevant && (hasEmail || hasLinkedIn)) {
     score = 'High';
     reasons.push(`Verified ${leadData.target_role} role at target company`);
-    if (isCityRelevant) reasons.push('Location connection confirmed');
+    reasons.push('Location connection confirmed');
     if (hasEmail) reasons.push('Public business email verified by source');
     else if (hasLinkedIn) reasons.push('Public professional profile verified');
   } else if (hasName && hasTitle) {
     score = 'Medium';
     if (!isCityRelevant) reasons.push('City connection not independently verified');
-    if (!hasEmail) reasons.push('Direct public business email not found');
+    if (!hasEmail) reasons.push('Direct public business email not found in verified sources');
     if (!isTargetRole) reasons.push(`Role (${leadData.target_role || 'General'}) is outside top priority tiers`);
   } else {
     score = 'Low';
@@ -50,8 +56,8 @@ function calculateConfidenceScore(leadData) {
   return {
     confidence: score,
     reason: reasons.join('; '),
-    eligibleForDraft: score === 'High' || score === 'Medium',
-    eligibleForApproval: score === 'High'
+    eligibleForDraft: (score === 'High' || score === 'Medium') && hasEmail,
+    eligibleForApproval: score === 'High' && hasEmail
   };
 }
 
