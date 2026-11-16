@@ -49,10 +49,11 @@ if (fs.existsSync(envPath)) {
 
 const CONFIG = {
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
   googleSheetId: process.env.GOOGLE_SHEET_ID || '',
   googleAccessToken: process.env.GOOGLE_ACCESS_TOKEN || '',
-  testRecipientEmail: process.env.TEST_RECIPIENT_EMAIL || 'test-lead@gopratle-testing.internal',
+  testRecipientEmail: process.env.TEST_RECIPIENT_EMAIL || 'ayushyadav5452@gmail.com',
   followupIntervalDays: parseInt(process.env.FOLLOWUP_INTERVAL_DAYS || '2', 10),
   defaultTimezone: process.env.DEFAULT_TIMEZONE || 'Asia/Kolkata',
   testMode: process.env.TEST_MODE !== 'false' // default to safe test mode
@@ -139,8 +140,6 @@ async function generateGeminiPitch(promptPayload, options = {}, retryCount = 0) 
     throw new Error('Missing required credential: GEMINI_API_KEY. Configure GEMINI_API_KEY in .env or environment.');
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.geminiApiKey}`;
-
   const systemInstruction = `You are an expert B2B Business Development Research and Outreach Assistant working for GoPratle.
 GoPratle connects event hosts with vetted event planners, DJs, and professional event crews.
 
@@ -173,28 +172,46 @@ Your task:
     ? `${systemInstruction}\n\nREPAIR INSTRUCTION:\n${options.repairInstruction}\n\nTask data:\n${JSON.stringify(promptPayload, null, 2)}`
     : `${systemInstruction}\n\nTask data:\n${JSON.stringify(promptPayload, null, 2)}`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [{ text: promptText }]
-      }],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: 'application/json'
-      }
-    })
-  });
+  const candidateModels = [CONFIG.geminiModel, 'gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  let lastError = null;
+  let rawText = null;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Gemini API call failed with status ${response.status}: ${errorBody}`);
+  for (const model of candidateModels) {
+    if (!model) continue;
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.geminiApiKey}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{ text: promptText }]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: 'application/json'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        lastError = new Error(`Gemini API (${model}) failed with status ${response.status}: ${errorBody}`);
+        continue;
+      }
+
+      const result = await response.json();
+      rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) break;
+    } catch (e) {
+      lastError = e;
+    }
   }
 
-  const result = await response.json();
-  const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
+    throw lastError || new Error('All Gemini candidate models failed to generate content');
+  }
 
   const validation = validateAiPitchResponse(rawText);
   if (validation.isValid) {
