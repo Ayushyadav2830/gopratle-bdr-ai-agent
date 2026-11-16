@@ -268,15 +268,3 @@ To run the system against your live accounts, configure `.env`:
 | **Test Mode Safety** | `TEST_MODE=true` | Keep `true` for safe demo mode |
 | **Test Inbox** | `TEST_RECIPIENT_EMAIL` | Candidate's test inbox for test sends |
 
----
-
-## 🎥 Screen Recording Plan (3–5 Minutes)
-
-Refer to [docs/screen-recording-script.md](docs/screen-recording-script.md) for a scene-by-scene script:
-- **0:00 – 0:30**: System overview & stack introduction
-- **0:30 – 1:00**: Adding `Zomato, Gurgaon` to the Google Sheet (Intake & Duplicate Check)
-- **1:00 – 2:00**: Real-time workflow execution (Tavily search, role ranking, Gemini pitch)
-- **2:00 – 2:45**: Google Sheet updated row inspection (sources, 3-line pitch, confidence)
-- **2:45 – 3:30**: Gmail draft inspection and approval gate demonstration
-- **3:30 – 4:10**: Follow-up automation and opt-out suppression check
-- **4:10 – 4:40**: 17/17 Passing Acceptance Tests & GitHub repository tour
