@@ -20,7 +20,7 @@
 8. [n8n Workflow Setup & Import](#-n8n-workflow-setup--import)
 9. [Automated Test Matrix (17/17 Pass)](#-automated-test-matrix-1717-pass)
 10. [Credentials & Configuration Required](#-credentials--configuration-required)
-11. [Screen Recording Plan (3–5 Minutes)](#-screen-recording-plan-35-minutes)
+11. [End-to-End Demo Video](#-end-to-end-demo-video)
 
 ---
 
@@ -267,4 +267,13 @@ To run the system against your live accounts, configure `.env`:
 | **Gmail OAuth** | Connected in n8n | Google Cloud Console OAuth 2.0 Client ID |
 | **Test Mode Safety** | `TEST_MODE=true` | Keep `true` for safe demo mode |
 | **Test Inbox** | `TEST_RECIPIENT_EMAIL` | Candidate's test inbox for test sends |
+
+---
+
+## 🎬 End-to-End Demo Video
+
+Watch the complete demonstration of the workflow executing live (Google Sheets trigger → Tavily multi-query research & candidate ranking → Gemini 3-line pitch generation → Google Sheets in-place update → Gmail draft creation):
+
+▶️ **[Click here to watch the Demo Video (MP4)](demo/gopratle-bdr-demo.mp4)**
+
 
